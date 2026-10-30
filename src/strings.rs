@@ -30,6 +30,7 @@ pub static PUSH_TAGS_STATES_PUSHING: &str = "pushing";
 pub static PUSH_TAGS_STATES_DONE: &str = "done";
 
 pub static POPUP_TITLE_SUBMODULES: &str = "Submodules";
+pub static POPUP_TITLE_WORKTREES: &str = "Worktrees";
 pub static POPUP_TITLE_REMOTES: &str = "Remotes";
 pub static POPUP_SUBTITLE_REMOTES: &str = "Details";
 pub static POPUP_TITLE_FUZZY_FIND: &str = "Fuzzy Finder";
@@ -264,6 +265,17 @@ pub fn confirm_msg_delete_remote(
 ) -> String {
 	format!("Confirm deleting remote \"{remote_name}\"")
 }
+pub fn confirm_title_delete_worktree(
+	_key_config: &SharedKeyConfig,
+) -> String {
+	"Delete Worktree".to_string()
+}
+pub fn confirm_msg_delete_worktree(
+	_key_config: &SharedKeyConfig,
+	worktree_name: &str,
+) -> String {
+	format!("Confirm deleting worktree: '{worktree_name}' ?")
+}
 pub fn confirm_msg_delete_remote_branch(
 	_key_config: &SharedKeyConfig,
 	branch_ref: &str,
@@ -351,6 +363,16 @@ pub fn create_branch_popup_msg(
 	_key_config: &SharedKeyConfig,
 ) -> String {
 	"type branch name".to_string()
+}
+pub fn create_worktree_popup_title(
+	_key_config: &SharedKeyConfig,
+) -> String {
+	"Worktree".to_string()
+}
+pub fn create_worktree_popup_msg(
+	_key_config: &SharedKeyConfig,
+) -> String {
+	"path to new worktree".to_string()
 }
 pub fn rename_remote_popup_title(
 	_key_config: &SharedKeyConfig,
@@ -933,6 +955,19 @@ pub mod commands {
 		)
 	}
 
+	pub fn view_worktrees(
+		key_config: &SharedKeyConfig,
+	) -> CommandText {
+		CommandText::new(
+			format!(
+				"Worktrees [{}]",
+				key_config.get_hint(key_config.keys.view_worktrees),
+			),
+			"open worktrees view",
+			CMD_GROUP_GENERAL,
+		)
+	}
+
 	pub fn view_remotes(key_config: &SharedKeyConfig) -> CommandText {
 		CommandText::new(
 			format!(
@@ -1062,6 +1097,58 @@ pub mod commands {
 				key_config.get_hint(key_config.keys.update_submodule),
 			),
 			"update submodule",
+			CMD_GROUP_GENERAL,
+		)
+	}
+
+	pub fn open_worktree(
+		key_config: &SharedKeyConfig,
+	) -> CommandText {
+		CommandText::new(
+			format!(
+				"Open [{}]",
+				key_config.get_hint(key_config.keys.enter),
+			),
+			"open worktree",
+			CMD_GROUP_GENERAL,
+		)
+	}
+
+	pub fn create_worktree(
+		key_config: &SharedKeyConfig,
+	) -> CommandText {
+		CommandText::new(
+			format!(
+				"Create [{}]",
+				key_config.get_hint(key_config.keys.create_branch),
+			),
+			"create worktree",
+			CMD_GROUP_GENERAL,
+		)
+	}
+
+	pub fn delete_worktree(
+		key_config: &SharedKeyConfig,
+	) -> CommandText {
+		CommandText::new(
+			format!(
+				"Delete [{}]",
+				key_config.get_hint(key_config.keys.delete_branch),
+			),
+			"delete worktree",
+			CMD_GROUP_GENERAL,
+		)
+	}
+
+	pub fn prune_worktrees(
+		key_config: &SharedKeyConfig,
+	) -> CommandText {
+		CommandText::new(
+			format!(
+				"Prune [{}]",
+				key_config.get_hint(key_config.keys.prune_worktrees),
+			),
+			"prune worktrees",
 			CMD_GROUP_GENERAL,
 		)
 	}
@@ -1682,6 +1769,20 @@ pub mod commands {
 			),
 			"create branch",
 			CMD_GROUP_BRANCHES,
+		)
+		.hide_help()
+	}
+
+	pub fn create_worktree_confirm_msg(
+		key_config: &SharedKeyConfig,
+	) -> CommandText {
+		CommandText::new(
+			format!(
+				"Create Worktree [{}]",
+				key_config.get_hint(key_config.keys.enter),
+			),
+			"create worktree",
+			CMD_GROUP_GENERAL,
 		)
 		.hide_help()
 	}

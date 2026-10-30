@@ -207,11 +207,16 @@ mod tests {
 				KeySymbols::default().esc
 			);
 
-			create_symlink(
+			if let Err(err) = create_symlink(
 				&temporary_key_symbols,
 				&original_key_symbols_path,
-			)
-			.unwrap();
+			) {
+				if cfg!(windows) && err.raw_os_error() == Some(1314) {
+					eprintln!("skipping test_symbolic_links: privilege not held on windows");
+					return;
+				}
+				panic!("{err}");
+			}
 			let loaded_config = KeyConfig::init(None, None).unwrap();
 			assert_eq!(
 				loaded_config.keys.move_down,

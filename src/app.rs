@@ -14,13 +14,14 @@ use crate::{
 		AppOption, BlameFilePopup, BranchListPopup,
 		CheckoutOptionPopup, CommitPopup, CompareCommitsPopup,
 		ConfirmPopup, CreateBranchPopup, CreateRemotePopup,
-		ExternalEditorPopup, FetchPopup, FileRevlogPopup,
-		FuzzyFindPopup, GotoLinePopup, HelpPopup, InspectCommitPopup,
-		LogSearchPopupPopup, MsgPopup, OptionsPopup, PullPopup,
-		PushPopup, PushTagsPopup, RemoteListPopup, RenameBranchPopup,
-		RenameRemotePopup, ResetPopup, RevisionFilesPopup,
-		StashMsgPopup, SubmodulesListPopup, TagCommitPopup,
-		TagListPopup, UpdateRemoteUrlPopup,
+		CreateWorktreePopup, ExternalEditorPopup, FetchPopup,
+		FileRevlogPopup, FuzzyFindPopup, GotoLinePopup, HelpPopup,
+		InspectCommitPopup, LogSearchPopupPopup, MsgPopup,
+		OptionsPopup, PullPopup, PushPopup, PushTagsPopup,
+		RemoteListPopup, RenameBranchPopup, RenameRemotePopup,
+		ResetPopup, RevisionFilesPopup, StashMsgPopup,
+		SubmodulesListPopup, TagCommitPopup, TagListPopup,
+		UpdateRemoteUrlPopup, WorktreesListPopup,
 	},
 	queue::{
 		Action, AppTabs, InternalEvent, NeedsUpdate, Queue,
@@ -97,6 +98,8 @@ pub struct App {
 	select_branch_popup: BranchListPopup,
 	options_popup: OptionsPopup,
 	submodule_popup: SubmodulesListPopup,
+	worktrees_popup: WorktreesListPopup,
+	create_worktree_popup: CreateWorktreePopup,
 	tags_popup: TagListPopup,
 	reset_popup: ResetPopup,
 	checkout_option_popup: CheckoutOptionPopup,
@@ -221,6 +224,8 @@ impl App {
 			tags_popup: TagListPopup::new(&env),
 			options_popup: OptionsPopup::new(&env),
 			submodule_popup: SubmodulesListPopup::new(&env),
+			worktrees_popup: WorktreesListPopup::new(&env),
+			create_worktree_popup: CreateWorktreePopup::new(&env),
 			log_search_popup: LogSearchPopupPopup::new(&env),
 			fuzzy_find_popup: FuzzyFindPopup::new(&env),
 			do_quit: QuitState::None,
@@ -523,6 +528,8 @@ impl App {
 			select_branch_popup,
 			revision_files_popup,
 			submodule_popup,
+			worktrees_popup,
+			create_worktree_popup,
 			tags_popup,
 			options_popup,
 			help_popup,
@@ -552,6 +559,8 @@ impl App {
 			rename_remote_popup,
 			update_remote_url_popup,
 			submodule_popup,
+			worktrees_popup,
+			create_worktree_popup,
 			tags_popup,
 			reset_popup,
 			checkout_option_popup,
@@ -797,6 +806,16 @@ impl App {
 			InternalEvent::ViewSubmodules => {
 				self.submodule_popup.open()?;
 			}
+			InternalEvent::ViewWorktrees => {
+				self.worktrees_popup.open()?;
+			}
+			InternalEvent::CreateWorktree => {
+				self.create_worktree_popup.open()?;
+			}
+			InternalEvent::WorktreesChanged => {
+				self.worktrees_popup.update_worktrees()?;
+				flags.insert(NeedsUpdate::ALL);
+			}
 			InternalEvent::Tags => {
 				self.tags_popup.open()?;
 			}
@@ -995,6 +1014,19 @@ impl App {
 			}
 			Action::DeleteRemote(remote_name) => {
 				self.delete_remote(&remote_name);
+			}
+			Action::DeleteWorktree(worktree_name) => {
+				try_or_popup!(
+					self,
+					"delete worktree:",
+					sync::remove_worktree(
+						&self.repo.borrow(),
+						&worktree_name,
+						false,
+					)
+				);
+				self.worktrees_popup.update_worktrees()?;
+				flags.insert(NeedsUpdate::ALL);
 			}
 			Action::DeleteTag(tag_name) => {
 				self.delete_tag(tag_name)?;
