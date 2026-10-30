@@ -34,6 +34,7 @@ mod submodules;
 mod tags;
 mod tree;
 pub mod utils;
+mod worktree;
 
 pub use blame::{blame_file, BlameHunk, FileBlame};
 pub use branch::{
@@ -98,6 +99,10 @@ pub use status::is_workdir_clean;
 pub use submodules::{
 	get_submodules, submodule_parent_info, update_submodule,
 	SubmoduleInfo, SubmoduleParentInfo, SubmoduleStatus,
+};
+pub use worktree::{
+	create_worktree, get_worktrees, prune_worktrees,
+	remove_worktree, WorktreeInfo,
 };
 pub use tags::{
 	delete_tag, get_tags, get_tags_with_metadata, CommitTags, Tag,
