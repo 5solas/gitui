@@ -132,10 +132,21 @@ impl CreateWorktreePopup {
 				.and_then(|name| name.to_str())
 				.unwrap_or("repo");
 			if let Some(parent) = main_path.parent() {
-				return parent
-					.join(format!("{repo_dir_name}-wt"))
-					.to_string_lossy()
-					.to_string();
+				// first suggestion that does not exist yet: -wt, -wt2, -wt3, ...
+				let candidate = (1..100)
+					.map(|i| {
+						let suffix = if i == 1 {
+							String::new()
+						} else {
+							i.to_string()
+						};
+						parent.join(format!(
+							"{repo_dir_name}-wt{suffix}"
+						))
+					})
+					.find(|p| !p.exists())
+					.unwrap_or_default();
+				return candidate.to_string_lossy().to_string();
 			}
 		}
 
