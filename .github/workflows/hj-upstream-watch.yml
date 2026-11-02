@@ -1,0 +1,126 @@
+name: hj-upstream-watch
+
+on:
+  schedule:
+    # Run daily at 02:23 UTC (non-zero minute to avoid load spikes)
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: 'Simulated base commit SHA or ref for origin/master (e.g. for testing older states)'
+        required: false
+        type: string
+        default: ''
+      skip_build:
+        description: 'Skip cargo build and test check'
+        required: false
+        type: boolean
+        default: false
+      no_issue:
+        description: 'Skip GitHub Issue creation or updates'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: hj-upstream-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    name: Watch Upstream Changes
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Configure Git and remotes
+        shell: pwsh
+        run: |
+          Write-Host "Configuring git user and settings..."
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global rerere.enabled true
+          git config --global merge.conflictstyle zdiff3
+
+          # Ensure upstream remote exists
+          $remotes = @(git remote)
+          if ($remotes -notcontains 'upstream') {
+            Write-Host "Adding upstream remote..."
+            git remote add upstream https://github.com/gitui-org/gitui.git
+          }
+
+          Write-Host "Fetching remotes..."
+          git fetch upstream --prune --tags
+          git fetch origin --prune
+
+          # Detach HEAD so the checked-out branch (hj/main) can be force-updated below
+          git checkout --detach
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+          # Ensure local tracking branches exist for all required fork branches
+          $requiredBranches = @('master', 'hj/main', 'hj/infra')
+          $topicsFile = 'eng/hj/topics.txt'
+          if (Test-Path $topicsFile) {
+            $topicLines = Get-Content $topicsFile | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') }
+            $requiredBranches += $topicLines
+          }
+
+          foreach ($branch in ($requiredBranches | Select-Object -Unique)) {
+            $remoteRef = "origin/$branch"
+            & git rev-parse --verify $remoteRef 2>$null
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "Setting local branch '$branch' -> '$remoteRef'..."
+              & git branch -f $branch $remoteRef
+            } else {
+              Write-Warning "Remote branch '$remoteRef' not found in origin."
+            }
+          }
+          exit 0
+
+      - name: Run upstream watcher
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $argsList = [System.Collections.Generic.List[string]]::new()
+          $baseRef = "${{ inputs.base_ref }}".Trim()
+          if ($baseRef) {
+            $argsList.Add("-BaseRef")
+            $argsList.Add($baseRef)
+          }
+
+          if ("${{ inputs.skip_build }}" -eq "true") {
+            $argsList.Add("-SkipBuild")
+          }
+
+          if ("${{ inputs.no_issue }}" -eq "true") {
+            $argsList.Add("-NoIssue")
+          }
+
+          # In CI, remotes have already been fetched in the previous step
+          $argsList.Add("-SkipFetch")
+
+          Write-Host "Executing Watch-Upstream.ps1 with arguments: $($argsList -join ' ')"
+          & pwsh -NoProfile -File eng/hj/Watch-Upstream.ps1 @argsList
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            Write-Error "Watch-Upstream.ps1 failed with exit code $code"
+            exit $code
+          }
