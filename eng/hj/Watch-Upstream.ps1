@@ -244,7 +244,7 @@ try {
                 Write-Host "    Checking for open 'upstream-sync' issues in $targetRepo to close..." -ForegroundColor White
                 $openIssuesLines = @(& $ghCmd.Source issue list --repo $targetRepo --label "upstream-sync" --state open --json number,title 2>$null)
                 if ($LASTEXITCODE -eq 0 -and $openIssuesLines.Count -gt 0) {
-                    $openIssues = ($openIssuesLines -join "`n") | ConvertFrom-Json
+                    $openIssues = @(($openIssuesLines -join "`n") | ConvertFrom-Json)
                     foreach ($issue in $openIssues) {
                         Write-Host "    Closing issue #$($issue.number) ('$($issue.title)')..." -ForegroundColor Yellow
                         & $ghCmd.Source issue close $issue.number --repo $targetRepo --comment "업스트림 최신 커밋($targetUpstreamShortSha)과 origin/master가 일치하여 동기화 이슈를 자동으로 종료합니다." 2>$null
@@ -762,7 +762,7 @@ try {
             $labelListLines = @(& $ghCmd.Source label list --repo $targetRepo --json name 2>$null)
             $labelExists = $false
             if ($LASTEXITCODE -eq 0 -and $labelListLines.Count -gt 0) {
-                $labels = ($labelListLines -join "`n") | ConvertFrom-Json
+                $labels = @(($labelListLines -join "`n") | ConvertFrom-Json)
                 foreach ($lbl in $labels) {
                     if ($lbl.name -eq "upstream-sync") {
                         $labelExists = $true
@@ -779,7 +779,7 @@ try {
             $openIssuesLines = @(& $ghCmd.Source issue list --repo $targetRepo --label "upstream-sync" --state open --json number,title,url 2>$null)
             $existingIssue = $null
             if ($LASTEXITCODE -eq 0 -and $openIssuesLines.Count -gt 0) {
-                $openIssues = ($openIssuesLines -join "`n") | ConvertFrom-Json
+                $openIssues = @(($openIssuesLines -join "`n") | ConvertFrom-Json)
                 if ($openIssues.Count -gt 0) {
                     $existingIssue = $openIssues[0]
                 }
