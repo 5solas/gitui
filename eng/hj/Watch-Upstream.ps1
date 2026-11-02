@@ -796,7 +796,7 @@ try {
                     Write-Host "    Issue #$issueNum updated successfully." -ForegroundColor Green
                     & $ghCmd.Source issue comment $issueNum --repo $targetRepo --body "업스트림 최신 커밋($targetUpstreamShortSha)에 대한 동기화 점검 결과가 갱신되었습니다: $issueTitle" 2>$null
                 } else {
-                    Write-Warning "Failed to edit issue #$issueNum."
+                    Write-Error "Failed to edit issue #$issueNum."; exit 1
                 }
             } else {
                 Write-Host "    Creating new issue '$issueTitle'..." -ForegroundColor White
@@ -804,7 +804,7 @@ try {
                 if ($LASTEXITCODE -eq 0) {
                     Write-Host "    Issue created successfully." -ForegroundColor Green
                 } else {
-                    Write-Warning "Failed to create GitHub issue."
+                    Write-Error "Failed to create GitHub issue (are Issues enabled on the repository?)."; exit 1
                 }
             }
         } else {
