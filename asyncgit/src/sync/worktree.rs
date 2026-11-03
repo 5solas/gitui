@@ -3,8 +3,8 @@
 use std::path::{Path, PathBuf};
 
 use git2::{
-	BranchType, Repository, WorktreeAddOptions, WorktreeLockStatus,
-	WorktreePruneOptions,
+	BranchType, Repository, StatusOptions, WorktreeAddOptions,
+	WorktreeLockStatus, WorktreePruneOptions,
 };
 use scopetime::scope_time;
 
@@ -110,6 +110,51 @@ fn paths_equal(path_first: &Path, path_second: &Path) -> bool {
 	{
 		false
 	}
+}
+
+/// turn a directory name into a valid branch name
+/// (e.g. `my repo-wt` -> `my-repo-wt`), like `git worktree add` does not
+/// but what users expect from the default path suggestion
+fn branch_name_from_worktree_name(name: &str) -> Result<String> {
+	let mut sanitized: String = name
+		.chars()
+		.map(|c| {
+			if c.is_whitespace()
+				|| c.is_control()
+				|| "~^:?*[\\".contains(c)
+			{
+				'-'
+			} else {
+				c
+			}
+		})
+		.collect();
+	while sanitized.contains("..") || sanitized.contains("@{") {
+		sanitized = sanitized.replace("..", "-").replace("@{", "-");
+	}
+	let sanitized = sanitized
+		.trim_matches(|c| c == '-' || c == '.' || c == '/')
+		.trim_end_matches(".lock")
+		.to_string();
+
+	if !sanitized.is_empty()
+		&& git2::Branch::name_is_valid(&sanitized)?
+	{
+		Ok(sanitized)
+	} else {
+		Err(Error::Generic(format!(
+			"cannot derive a valid branch name from worktree name '{name}'"
+		)))
+	}
+}
+
+/// true if the worktree has modified, staged or untracked files
+fn worktree_is_dirty(worktree: &git2::Worktree) -> Result<bool> {
+	let repository = Repository::open_from_worktree(worktree)?;
+	let mut options = StatusOptions::new();
+	options.include_untracked(true).include_ignored(false);
+	let statuses = repository.statuses(Some(&mut options))?;
+	Ok(!statuses.is_empty())
 }
 
 fn get_branch_and_head(
@@ -268,7 +313,12 @@ pub fn create_worktree(
 		}
 	}
 
-	let branch_name = branch.unwrap_or(worktree_name);
+	let branch_name = if let Some(name) = branch {
+		name.to_string()
+	} else {
+		branch_name_from_worktree_name(worktree_name)?
+	};
+	let branch_name = branch_name.as_str();
 
 	let (branch_reference, branch_created) = if let Ok(local_branch) =
 		repository.find_branch(branch_name, BranchType::Local)
@@ -327,6 +377,16 @@ pub fn remove_worktree(
 	);
 	if is_locked && !force {
 		return Err(Error::Generic("worktree is locked".into()));
+	}
+
+	// like `git worktree remove`: never silently delete uncommitted work
+	if !force
+		&& worktree.validate().is_ok()
+		&& worktree_is_dirty(&worktree)?
+	{
+		return Err(Error::Generic(
+			"worktree contains modified or untracked files".into(),
+		));
 	}
 
 	let mut prune_options = WorktreePruneOptions::new();
@@ -596,5 +656,70 @@ mod tests {
 
 		remove_worktree(&repo_path, "worktree_locked", true).unwrap();
 		assert!(!worktree_path_locked.exists());
+	}
+
+	#[test]
+	fn test_remove_refuses_dirty_worktree() {
+		let (temporary_directory, _repository) = repo_init().unwrap();
+		let repo_path =
+			RepoPath::Path(temporary_directory.path().to_path_buf());
+		let parent = TempDir::new().unwrap();
+		let wt_path = parent.path().join("dirty");
+		create_worktree(&repo_path, &wt_path, None).unwrap();
+
+		// untracked file makes the worktree dirty
+		std::fs::write(wt_path.join("notes.txt"), "unsaved").unwrap();
+
+		assert!(remove_worktree(&repo_path, "dirty", false).is_err());
+		assert!(wt_path.join("notes.txt").exists());
+
+		remove_worktree(&repo_path, "dirty", true).unwrap();
+		assert!(!wt_path.exists());
+	}
+
+	#[test]
+	fn test_create_sanitizes_branch_name_from_path() {
+		let (temporary_directory, _repository) = repo_init().unwrap();
+		let repo_path =
+			RepoPath::Path(temporary_directory.path().to_path_buf());
+		let parent = TempDir::new().unwrap();
+
+		// directory names with spaces are not valid branch names
+		let wt_path = parent.path().join("my repo-wt");
+		create_worktree(&repo_path, &wt_path, None).unwrap();
+
+		let wts = get_worktrees(&repo_path).unwrap();
+		let entry = wts.iter().find(|e| !e.is_main).unwrap();
+		assert_eq!(entry.branch.as_deref(), Some("my-repo-wt"));
+		assert!(entry.is_valid);
+	}
+
+	#[test]
+	fn test_operations_from_linked_worktree() {
+		let (temporary_directory, _repository) = repo_init().unwrap();
+		let main_repo_path =
+			RepoPath::Path(temporary_directory.path().to_path_buf());
+		let parent = TempDir::new().unwrap();
+		let wt_a = parent.path().join("wt_a");
+		create_worktree(&main_repo_path, &wt_a, None).unwrap();
+
+		// now act from inside the linked worktree
+		let wt_repo_path = RepoPath::Path(wt_a.clone());
+
+		let wts = get_worktrees(&wt_repo_path).unwrap();
+		let main = wts.iter().find(|e| e.is_main).unwrap();
+		assert!(paths_equal(&main.path, temporary_directory.path()));
+		assert!(!main.is_current);
+
+		let wt_b = parent.path().join("wt_b");
+		create_worktree(&wt_repo_path, &wt_b, None).unwrap();
+		assert_eq!(get_worktrees(&wt_repo_path).unwrap().len(), 3);
+
+		remove_worktree(&wt_repo_path, "wt_b", false).unwrap();
+		assert!(!wt_b.exists());
+
+		std::fs::remove_dir_all(&wt_b).ok();
+		prune_worktrees(&wt_repo_path).unwrap();
+		assert_eq!(get_worktrees(&wt_repo_path).unwrap().len(), 2);
 	}
 }

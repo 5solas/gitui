@@ -287,4 +287,109 @@ mod tests {
 			terminal.backend()
 		);
 	}
+
+	macro_rules! press {
+		($gitui:expr, $key:expr) => {
+			$gitui.input_event($key.code, $key.modifiers)
+		};
+	}
+
+	/// drives the real key sequence: worktree list -> create popup ->
+	/// replace suggested path -> confirm
+	fn create_worktree_via_ui(
+		gitui: &mut Gitui,
+		key_config: &KeyConfig,
+		path: &std::path::Path,
+	) {
+		let keys = &key_config.keys;
+		press!(gitui, keys.create_branch);
+		gitui.input_event(KeyCode::End, KeyModifiers::empty());
+		for _ in 0..300 {
+			gitui.input_event(
+				KeyCode::Backspace,
+				KeyModifiers::empty(),
+			);
+		}
+		for c in path.to_str().unwrap().chars() {
+			gitui
+				.input_event(KeyCode::Char(c), KeyModifiers::empty());
+		}
+		press!(gitui, keys.enter);
+	}
+
+	#[test]
+	fn gitui_worktree_flow() {
+		use crate::app::QuitState;
+		use asyncgit::sync::get_worktrees;
+
+		let (temp_dir, _repo) = repo_init_suffix(Some("-wt"));
+		let repo_path: RepoPath =
+			temp_dir.path().to_str().unwrap().into();
+		let cliargs = CliArgs {
+			theme: PathBuf::from("theme.ron"),
+			select_file: None,
+			repo_path: repo_path.clone(),
+			notify_watcher: false,
+			key_bindings_path: None,
+			key_symbols_path: None,
+		};
+		let key_config = KeyConfig::default();
+		let keys = &key_config.keys;
+		let mut gitui = Gitui::new(
+			cliargs,
+			Theme::init(&PathBuf::new()),
+			&key_config,
+			Updater::Ticker,
+		)
+		.unwrap();
+		let mut terminal =
+			Terminal::new(TestBackend::new(100, 30)).unwrap();
+		gitui.draw(&mut terminal).unwrap();
+		gitui.update_async(AsyncNotification::Git(
+			AsyncGitNotification::Status,
+		));
+
+		let wt_parent = tempfile::TempDir::new().unwrap();
+		let wt_path = wt_parent.path().join("ui-wt");
+
+		// create
+		press!(gitui, keys.view_worktrees);
+		gitui.draw(&mut terminal).unwrap();
+		create_worktree_via_ui(&mut gitui, &key_config, &wt_path);
+		assert!(
+			wt_path.join(".git").exists(),
+			"worktree not created"
+		);
+		assert_eq!(get_worktrees(&repo_path).unwrap().len(), 2);
+		gitui.draw(&mut terminal).unwrap();
+
+		// delete is refused while the worktree has uncommitted work
+		std::fs::write(wt_path.join("wip.txt"), "wip").unwrap();
+		press!(gitui, keys.move_down);
+		press!(gitui, keys.delete_branch);
+		press!(gitui, keys.enter); // confirm
+		assert!(wt_path.join("wip.txt").exists());
+		assert_eq!(get_worktrees(&repo_path).unwrap().len(), 2);
+		press!(gitui, keys.exit_popup); // close error message
+
+		// clean worktree deletes fine
+		std::fs::remove_file(wt_path.join("wip.txt")).unwrap();
+		press!(gitui, keys.delete_branch);
+		press!(gitui, keys.enter);
+		assert!(!wt_path.exists());
+		assert_eq!(get_worktrees(&repo_path).unwrap().len(), 1);
+
+		// open: app asks to be restarted inside the worktree
+		create_worktree_via_ui(&mut gitui, &key_config, &wt_path);
+		gitui.draw(&mut terminal).unwrap();
+		press!(gitui, keys.move_down);
+		press!(gitui, keys.enter);
+		match gitui.app.quit_state() {
+			QuitState::OpenSubmodule(p) => assert_eq!(
+				p.gitpath().canonicalize().unwrap(),
+				wt_path.canonicalize().unwrap()
+			),
+			_ => panic!("expected OpenSubmodule quit state"),
+		}
+	}
 }

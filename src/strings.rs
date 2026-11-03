@@ -274,7 +274,9 @@ pub fn confirm_msg_delete_worktree(
 	_key_config: &SharedKeyConfig,
 	worktree_name: &str,
 ) -> String {
-	format!("Confirm deleting worktree: '{worktree_name}' ?")
+	format!(
+		"Confirm deleting worktree '{worktree_name}'?\n\nThis removes its directory from disk (the branch is kept).\nWorktrees with uncommitted changes are refused."
+	)
 }
 pub fn confirm_msg_delete_remote_branch(
 	_key_config: &SharedKeyConfig,
